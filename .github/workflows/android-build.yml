@@ -1,0 +1,93 @@
+name: Android Build
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK & NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          sdkmanager --install "ndk;25.2.9519653"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
+
+      - name: Clone SDL2
+        run: |
+          git clone --branch release-2.30.9 --depth 1 https://github.com/libsdl-org/SDL.git sdl2-src
+
+      - name: Set up Android project skeleton from SDL2 template
+        run: |
+          mkdir -p android
+          cp -r sdl2-src/android-project/* android/
+          rm -rf android/app/src/main/cpp/*
+          mkdir -p android/app/src/main/cpp
+          cp -r sdl2-src android/app/src/main/cpp/SDL
+
+      - name: Copy game source into project
+        run: |
+          mkdir -p android/app/src/main/cpp/game
+          cp -r source android/app/src/main/cpp/game/source
+          cp -r include android/app/src/main/cpp/game/include || true
+
+      - name: Clone Boost-for-Android builder
+        run: |
+          git clone --depth 1 https://github.com/moritz-wundke/Boost-for-Android.git boost-builder
+
+      - name: Build Boost for Android (arm64-v8a)
+        run: |
+          cd boost-builder
+          ./build-android.sh --boost=1.77.0 --arch=arm64-v8a $ANDROID_NDK_HOME || echo "BOOST_BUILD_FAILED"
+
+      - name: Write CMakeLists for native build
+        run: |
+          cat > android/app/src/main/cpp/CMakeLists.txt << 'EOF'
+          cmake_minimum_required(VERSION 3.10)
+          project(smbandroid)
+
+          add_subdirectory(SDL)
+
+          file(GLOB_RECURSE GAME_SOURCES game/source/*.cpp)
+
+          add_library(main SHARED
+              ${GAME_SOURCES}
+              SDL/src/main/android/SDL_android_main.c
+          )
+
+          target_include_directories(main PRIVATE
+              game/include
+              SDL/include
+          )
+
+          target_link_libraries(main
+              SDL2
+              log
+              android
+          )
+          EOF
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smb-android-apk
+          path: android/app/build/outputs/apk/debug/*.apk
