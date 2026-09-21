@@ -17,15 +17,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK & NDK
-        uses: android-actions/setup-android@v3
-
       - name: Install NDK
         run: |
           yes | sdkmanager --licenses || true
-          yes | sdkmanager --install "ndk;25.2.9519653"
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
-
+          sdkmanager --install "ndk;25.2.9519653"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+          
       - name: Clone SDL2
         run: |
           git clone --branch release-2.30.9 --depth 1 https://github.com/libsdl-org/SDL.git sdl2-src
